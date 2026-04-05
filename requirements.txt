@@ -1,0 +1,13 @@
+streamlit
+beautifulsoup4
+requests
+selenium
+pandas
+matplotlib
+networkx
+seaborn
+certifi
+urllib3
+html5lib
+webdriver-manager
+google-search-results
