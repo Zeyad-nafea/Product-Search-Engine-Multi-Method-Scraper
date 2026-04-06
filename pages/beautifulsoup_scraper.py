@@ -63,8 +63,16 @@ if search_q:
             with st.expander("🔍 Debug info", expanded=False):
                 st.write(f"**Status code:** {r.status_code}")
                 st.write(f"**URL fetched:** {r.url}")
-                if r.status_code != 200:
-                    st.warning("eBay returned a non-200 status — may be blocking the request.")
+
+            # ── Hard stop on non-200 ──────────────────────────────────────────
+            if r.status_code != 200:
+                st.error(
+                    f"eBay blocked the request — Status **{r.status_code}**. "
+                    "Try again in a few seconds."
+                )
+                with st.expander("📄 Raw HTML preview (first 3000 chars)"):
+                    st.code(r.text[:3000], language="html")
+                st.stop()
 
             soup = BeautifulSoup(r.content, "html5lib")
 
@@ -86,7 +94,7 @@ if search_q:
             bu_prices    = []
 
             for item in items:
-                # ── Title (div or span fallback) ──────────────────────────────
+                # ── Title ─────────────────────────────────────────────────────
                 title_text = (
                     try_find_text(item, "div", TITLE_SELECTORS)
                     or try_find_text(item, "span", TITLE_SELECTORS)
@@ -101,7 +109,6 @@ if search_q:
                 )
 
                 # ── Reviews ───────────────────────────────────────────────────
-                # First try the detailed review span (your original logic)
                 reviews_text = "0"
                 reviews_el = item.find("div", class_="s-item__reviews")
                 if reviews_el:
@@ -109,7 +116,6 @@ if search_q:
                     if clipped:
                         reviews_text = clipped.get_text(strip=True)
 
-                # Fallback to broader review selectors
                 if reviews_text == "0":
                     reviews_text = (
                         try_find_text(item, "span", REVIEW_SELECTORS)
@@ -125,6 +131,7 @@ if search_q:
                     "category": search_q.strip(),
                 })
 
+            # ── Results or warning ────────────────────────────────────────────
             if scraped_data:
                 df = pd.DataFrame(scraped_data)
                 st.success(f"Found {len(df)} listings for **{search_q}**")
@@ -144,15 +151,24 @@ if search_q:
 
             else:
                 st.warning(
-                    "No listings found. This usually means eBay served a CAPTCHA "
-                    "or changed their HTML structure. Check the **Debug info** "
+                    "No listings found. eBay may have served a CAPTCHA "
+                    "or changed their HTML structure. Check the **Selector debug** "
                     "expander above for clues."
                 )
                 with st.expander("📄 Raw HTML preview (first 3000 chars)"):
                     st.code(r.text[:3000], language="html")
 
+        except requests.exceptions.Timeout:
+            st.error("⏱️ Request timed out. eBay took too long to respond — try again.")
+
+        except requests.exceptions.ConnectionError:
+            st.error("🔌 Connection failed. Check your internet connection and try again.")
+
+        except requests.exceptions.TooManyRedirects:
+            st.error("🔁 Too many redirects. eBay may be redirecting the request unexpectedly.")
+
         except Exception as e:
-            st.error(f"An error occurred while scraping: {e}")
+            st.error(f"❌ An unexpected error occurred: {e}")
 
 st.markdown("---")
 st.page_link("main.py", label="🔙 Return to Main Page", icon="🏠")
