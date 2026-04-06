@@ -11,7 +11,7 @@ st.markdown("Scrapes live eBay search results by parsing raw HTML — no API key
 
 search_q = st.text_input("Enter what to search on eBay:", placeholder="e.g. watches for men")
 
-# ── Realistic browser headers ──────────────────────────────────────────────────
+# ── Realistic browser headers ─────────────────────────────────────────────────
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -26,11 +26,11 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
-# ── Selector fallback map: try each until one yields results ───────────────────
+# ── Selector fallback map ─────────────────────────────────────────────────────
 ITEM_SELECTORS = [
-    ("div",  {"class": "s-item__wrapper clearfix"}),
-    ("li",   {"class": "s-item"}),
-    ("div",  {"class": "s-item__pl-on-right"}),
+    ("div", {"class": "s-item__wrapper clearfix"}),
+    ("li",  {"class": "s-item"}),
+    ("div", {"class": "s-item__pl-on-right"}),
 ]
 
 TITLE_SELECTORS  = ["s-item__title"]
@@ -57,9 +57,9 @@ if search_q:
             session = requests.Session()
             session.headers.update(HEADERS)
 
-            r = session.get(url, verify=False, timeout=15)
+            r = session.get(url, verify=False, timeout=30)
 
-            # ── Diagnostic expander (only visible during development) ──────────
+            # ── Debug expander ────────────────────────────────────────────────
             with st.expander("🔍 Debug info", expanded=False):
                 st.write(f"**Status code:** {r.status_code}")
                 st.write(f"**URL fetched:** {r.url}")
@@ -68,7 +68,7 @@ if search_q:
 
             soup = BeautifulSoup(r.content, "html5lib")
 
-            # ── Try each selector until we get results ─────────────────────────
+            # ── Try each selector until we get results ────────────────────────
             items = []
             matched_selector = None
             for tag, attrs in ITEM_SELECTORS:
@@ -78,7 +78,7 @@ if search_q:
                     matched_selector = (tag, attrs)
                     break
 
-            with st.expander("🔍 Debug info", expanded=False):
+            with st.expander("🔍 Selector debug", expanded=False):
                 st.write(f"**Selector used:** {matched_selector}")
                 st.write(f"**Raw items found:** {len(items)}")
 
@@ -86,17 +86,36 @@ if search_q:
             bu_prices    = []
 
             for item in items:
-                # Skip eBay's ghost/filler elements
-                title_text = try_find_text(item, "div", TITLE_SELECTORS) or \
-                             try_find_text(item, "span", TITLE_SELECTORS)
-
+                # ── Title (div or span fallback) ──────────────────────────────
+                title_text = (
+                    try_find_text(item, "div", TITLE_SELECTORS)
+                    or try_find_text(item, "span", TITLE_SELECTORS)
+                )
                 if not title_text or title_text.lower() in ("shop on ebay", ""):
                     continue
 
-                price_text   = try_find_text(item, "span", PRICE_SELECTORS) or \
-                               try_find_text(item, "div",  PRICE_SELECTORS)
-                reviews_text = try_find_text(item, "span", REVIEW_SELECTORS) or \
-                               try_find_text(item, "div",  REVIEW_SELECTORS) or "0"
+                # ── Price ─────────────────────────────────────────────────────
+                price_text = (
+                    try_find_text(item, "span", PRICE_SELECTORS)
+                    or try_find_text(item, "div",  PRICE_SELECTORS)
+                )
+
+                # ── Reviews ───────────────────────────────────────────────────
+                # First try the detailed review span (your original logic)
+                reviews_text = "0"
+                reviews_el = item.find("div", class_="s-item__reviews")
+                if reviews_el:
+                    clipped = reviews_el.find("span", class_="clipped")
+                    if clipped:
+                        reviews_text = clipped.get_text(strip=True)
+
+                # Fallback to broader review selectors
+                if reviews_text == "0":
+                    reviews_text = (
+                        try_find_text(item, "span", REVIEW_SELECTORS)
+                        or try_find_text(item, "div",  REVIEW_SELECTORS)
+                        or "0"
+                    )
 
                 bu_prices.append(price_text)
                 scraped_data.append({
@@ -123,12 +142,7 @@ if search_q:
                 st.session_state.bu_prices    = bu_prices
                 st.session_state.scraped_data = scraped_data
 
-                st.markdown("---")
-                st.markdown("#### ✅ Done! Continue to Step 2:")
-                st.page_link("pages/serpapi_scraper.py", label="Next → SerpAPI Scraper", icon="🔑")
-
             else:
-                # ── Helpful fallback message ───────────────────────────────────
                 st.warning(
                     "No listings found. This usually means eBay served a CAPTCHA "
                     "or changed their HTML structure. Check the **Debug info** "
